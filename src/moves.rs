@@ -64,7 +64,7 @@ impl SpecialMoves {
                 if power == 2 {
                     power = 5
                 }
-                (off(2, power, 1, 0, 0, (power > 2) as u32, 0, 0), Some(effect))
+                (off(2, power, 1, 0, 0, (power > 3) as u32, 0, 0), Some(effect))
             },
             Self::Accelerate => {
                 fn effect (
@@ -76,7 +76,7 @@ impl SpecialMoves {
                     _: usize
                 ) {
                     teams[team][player].special.accelerate += 1;
-                    println!("T{}P{} accelerated to {}", team, player, move_.damage - 2);
+                    println!("T{}P{} accelerated to {}", team + 1, player + 1, move_.damage - 2);
                 }
                 (
                     dmg(3, 3 + user.special.accelerate, 1),
@@ -264,7 +264,7 @@ pub static MOVES: phf::Map<&'static str, Move> = phf_map! {
     //defensive: (cost, heal, shield, tankify, regen, strength, guard, dodge, cleanse)
     "cleanse" => def(1, 0, 0, 0, 0, 0, 0, 0, 1),
     "heal" => def(2, 2, 0, 0, 0, 0, 0, 0, 1),
-    "regenerate" => def(2, 1, 0, 0, 3, 0, 0, 0, 1),
+    "regenerate" => def(2, 1, 0, 0, 3, 0, 0, 0, 0),
     "shield" => def(2, 0, 4, 0, 0, 0, 0, 0, 0),
     "strength" => def(2, 0, 0, 0, 0, 1, 0, 0, 0),
     "guard" => def(2, 0, 0, 0, 0, 0, 1, 0, 0),

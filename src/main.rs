@@ -131,17 +131,31 @@ fn attack(
 fn get_target(teams: &Vec<Vec<Player>>, team: usize) -> (usize, usize) {
     //infer target when possible
     //TODO: do something about targeting players with < 1 hp
-    let tt: usize;
-    let tp: usize;
-    if teams.len() == 2 {
-        tt = 1 - team;
-    } else {
-        tt = get_usize_between(1, teams.len()) - 1;
-    }
-    if teams[tt].len() == 1 {
-        tp = 0;
-    } else {
-        tp = get_usize_between(1, teams[tt].len()) - 1;
+    let mut tt = 0;
+    let mut tp = 0;
+    let mut invalid = true;
+    while invalid {
+        if teams.len() == 2 {
+            tt = 1 - team;
+        } else {
+            println!("Select team to target:");
+            tt = get_usize_between(1, teams.len()) - 1;
+            if tt == team || teams[tt].iter().all(|p| p.hp <= 0) {
+                println!("Invalid Team");
+                continue;
+            }
+        }
+        if teams[tt].len() == 1 {
+            tp = 0;
+        } else {
+            println!("Select player to target:");
+            tp = get_usize_between(1, teams[tt].len()) - 1;
+            if teams[tt][tp].hp <= 0 {
+                println!("Invalid Player");
+            } else {
+                invalid = false;
+            }
+        }
     }
     (tt, tp)
 }
@@ -149,29 +163,28 @@ fn get_target(teams: &Vec<Vec<Player>>, team: usize) -> (usize, usize) {
 fn execute(teams: &mut Vec<Vec<setup::Player>>, move_type: &moves::Move, team: usize, player: usize) {
     let move_: &moves::Move;
     let gen_move: moves::Move;
-    let tt: usize;
-    let tp: usize;
+    let mut tt;
+    let mut tp;
     let effect: Option::<fn(move_: &Move, teams: &mut Vec<Vec<Player>>, team: usize, player: usize, tt: usize, tp: usize)>;
+    let requires_target = move_type.special.requires_effect_target();
     if move_type.special == SpecialMoves::Default { 
         move_ = move_type;
         effect = None;
-        if move_.damage > 0 || move_.poison > 0 || move_.burn > 0 || move_.stun > 0 || move_.weaken > 0 || move_.dispel > 0 {
-            (tt, tp) = get_target(teams, team);
-        } else {
-            tt = 0;
-            tp = 0;
-        }
-    } else if move_type.special.requires_effect_target() {
+    } else if requires_target {
         (tt, tp) = get_target(teams, team);
         (gen_move, effect) = move_type.special.get(&teams[team][player], &teams[tt][tp]);
         move_ = &gen_move;
     } else {
-        tt = 0;
-        tp = 0;
         (gen_move, effect) = move_type.special.get(&teams[team][player], &teams[0][0]);
         move_ = &gen_move;
     }
 
+    if !requires_target && (move_.damage > 0 || move_.poison > 0 || move_.burn > 0 || move_.stun > 0 || move_.weaken > 0 || move_.dispel > 0) {
+        (tt, tp) = get_target(teams, team);
+    } else {
+        tt = 0;
+        tp = 0;
+    }
     
     //execution order: tankify, heal, cleanse, user str/weaken, dispel, target shield/guard/dodge, damage, debuff, buff
     //tankify
@@ -189,10 +202,21 @@ fn execute(teams: &mut Vec<Vec<setup::Player>>, move_type: &moves::Move, team: u
     }
     //cleanse
     if move_.cleanse > 0 {
-        teams[team][player].poison -= 1;
-        teams[team][player].burn -= 1;
-        teams[team][player].stun -= 1;
-        teams[team][player].weaken -= 1;
+        if move_.cleanse > teams[team][player].poison {
+            teams[team][player].poison = 0;
+        } else {
+            teams[team][player].poison -= move_.cleanse;
+        }
+        if move_.cleanse > teams[team][player].burn {
+            teams[team][player].burn = 0;
+        } else {
+            teams[team][player].burn -= move_.cleanse;
+        }
+        if move_.cleanse > teams[team][player].weaken {
+            teams[team][player].weaken = 0;
+        } else {
+            teams[team][player].weaken -= move_.cleanse;
+        }
         println!("T{}P{} cleansed for {}", team + 1, player + 1, move_.cleanse);
     }
     //attack sequence
@@ -243,13 +267,13 @@ fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<
         .iter()
         .map(|t| t
             .iter()
-            .map(|p| p.hp.to_string())
+            .map(|p| if p.hp > 0 { p.hp.to_string() } else { "X".to_string() })
             .collect::<Vec<String>>()
         .join(", "))
         .collect::<Vec<String>>()
         .join(" - ")
     );
-    println!("Player {} of Team {}'s Turn!", team + 1, player + 1);
+    println!("Player {} of Team {}'s Turn!", player + 1, team + 1);
     //regen
     if game.teams[team][player].regen > 0 {
         println!("T{}P{} regenerated 1 hp", team + 1, player + 1);
@@ -266,7 +290,7 @@ fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<
             let input = get_user_input::<String>().to_ascii_lowercase();
             if input == "s" {
                 let random = dist.sample(&mut rng);
-                if random > 50 + game.luck as u32 {
+                if random < 50 + game.luck as u32 {
                     streak += 1;
                     println!("Streak Successful");
                 } else {
@@ -321,13 +345,13 @@ fn game_over(teams: &Vec<Vec<setup::Player>>) -> (bool, usize) {
                 .any(|player| player.hp > 0)
             )
             .count() == 1,
-        0 /*teams
+        teams
             .iter()
             .position(|team| team
                 .iter()
                 .any(|player| player.hp > 0)
             )
-            .unwrap(),*/
+            .unwrap(),
     )
 }
 
@@ -351,9 +375,20 @@ fn main() {
     while !game_over {
         for team in 0..game.teams.len() {
             for player in 0..game.teams[team].len() {
-                (game_over, winner) = take_turn(&mut game, team, player, &distribution);
+                if game.teams[team][player].hp > 0 {
+                    (game_over, winner) = take_turn(&mut game, team, player, &distribution);
+                }
+                if game_over {
+                    break;
+                }
+            }
+            if game_over {
+                break;
             }
         }
+        if game_over {
+            break;
+        }
     }
-    println!("{} won the game!", winner);
+    println!("Team {} won the game!", winner + 1);
 }
