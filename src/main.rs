@@ -1,5 +1,7 @@
 use crate::setup::get_user_input;
-use rand::distributions::{Distribution, Uniform}; 
+use moves::{Move, SpecialMoves};
+use rand::distributions::{Distribution, Uniform};
+use setup::Player; 
 
 pub mod setup;
 pub mod moves;
@@ -18,59 +20,73 @@ fn attack(
         teams[tt][tp].guard -= move_.dispel;
         teams[tt][tp].dodge -= move_.dispel;
         if teams[tt][tp].shield > 0 {
-            teams[tt][tp].shield -= move_.dispel * 2;
-            if teams[tt][tp].shield <= 0 {
+            if teams[tt][tp].shield <= move_.dispel * 2 {
                 teams[tt][tp].shield = 0;
-                println!("T{}P{}'s shield broke", tt, tp)
+                println!("T{}P{}'s shield broke", tt + 1, tp + 1);
+            } else {
+                teams[tt][tp].shield -= move_.dispel * 2;
+                println!(
+                    "T{}P{}'s shield took {} damage",
+                    tt + 1,
+                    tp + 1,
+                    move_.dispel * 2
+                );
             }
         }
         
     }
 
-    if move_.damage > 0 {
-        for _ in 0..move_.repeat {
-            let mut remaining_dmg = move_.damage;
-            //check weaken
-            if teams[team][player].weaken > 0 {
-                teams[team][player].weaken -= 1;
-                remaining_dmg /= 2;
-                if remaining_dmg < 1 {
-                    println!("Too weak to attack")
-                } else {
-                    println!("The attack was weakened");
-                }
+    for _ in 0..move_.repeat {
+        let mut remaining_dmg = move_.damage;
+        //check strength 
+        if teams[team][player].strength > 0 {
+            teams[team][player].strength -= 1;
+            remaining_dmg *= 2;
+            println!("The attack is strengthened")
+        }
+        //check weaken
+        if teams[team][player].weaken > 0 {
+            teams[team][player].weaken -= 1;
+            remaining_dmg /= 2;
+            if remaining_dmg < 1 {
+                println!("Too weak to attack")
+            } else {
+                println!("The attack is weakened");
             }
-            //check dodge
-            if teams[tt][tp].dodge > 0 && remaining_dmg > 3 {
-                teams[tt][tp].dodge -= 1;
-                println!("T{}P{} dodged", tt, tp);
-                continue;
-            }
-            //check guard
-            if teams[tt][tp].guard > 0 && remaining_dmg < 3 {
-                teams[tt][tp].guard -= 1;
-                println!("T{}P{} guarded", tt, tp);
-                break;
-            }
-            //shield fully blocks
+        }
+        //check dodge
+        if teams[tt][tp].dodge > 0 && remaining_dmg > 3 {
+            teams[tt][tp].dodge -= 1;
+            println!("T{}P{} dodged", tt + 1, tp + 1);
+            continue;
+        }
+        //check guard
+        if teams[tt][tp].guard > 0 && remaining_dmg < 3 {
+            teams[tt][tp].guard -= 1;
+            println!("T{}P{} guarded", tt + 1, tp + 1);
+            break;
+        }
+        //shield fully blocks
+        if teams[tt][tp].shield > 0 {
+        //shield
             if teams[tt][tp].shield > remaining_dmg {
                 teams[tt][tp].shield -= remaining_dmg;
-                println!("T{}P{}'s shield took {} damage", tt, tp, remaining_dmg);
+                println!("T{}P{}'s shield took {} damage", tt + 1, tp + 1, remaining_dmg);
             //shield break
             } else if teams[tt][tp].shield <= move_.damage {
                 remaining_dmg -= teams[tt][tp].shield;
                 teams[tt][tp].shield = 0;
-                println!("T{}P{}'s shield broke", tt, tp);
+                println!("T{}P{}'s shield broke", tt + 1, tp + 1);
                 if remaining_dmg == 0 {
                     continue;
                 }
             }
-            //actual damage
-            teams[tt][tp].hp -= remaining_dmg;
-            println!("T{}P{} dealt {} damage to T{}P{}", team, player, remaining_dmg, tt, tp);
-            if teams[tt][tp].hp <= 0 {
-                println!("T{}P{} was felled!", tt, tp);
-            }
+        }
+        //actual damage
+        teams[tt][tp].hp -= remaining_dmg as i32;
+        println!("T{}P{} dealt {} damage to T{}P{}", team + 1, player + 1, remaining_dmg, tt + 1, tp + 1);
+        if teams[tt][tp].hp <= 0 {
+            println!("T{}P{} was felled!", tt + 1, tp + 1);
         }
     }
     //debuffs
@@ -81,7 +97,7 @@ fn attack(
         } else {
             move_.poison
         };
-        println!("T{}P{} was poisoned for {}", tt, tp, move_.poison);
+        println!("T{}P{} was poisoned for {} turn(s)", tt + 1, tp + 1, move_.poison);
     }
     //burn
     if move_.burn > 0 {
@@ -90,7 +106,7 @@ fn attack(
         } else {
             move_.burn
         };
-        println!("T{}P{} was burned for {}", tt, tp, move_.burn);
+        println!("T{}P{} was burned for {} turn(s)", tt + 1, tp + 1, move_.burn);
     }
     //stun
     if move_.stun > 0 {
@@ -99,7 +115,7 @@ fn attack(
         } else {
             move_.stun
         };
-        println!("T{}P{} was stunned for {}", tt, tp, move_.stun);
+        println!("T{}P{} was stunned for {} turn(s)", tt + 1, tp + 1, move_.stun);
     }
     //weaken
     if move_.weaken > 0 {
@@ -108,24 +124,68 @@ fn attack(
         } else {
             move_.weaken
         };
-        println!("T{}P{} was weakened for {}", tt, tp, move_.weaken);
+        println!("T{}P{} was weakened for {}", tt + 1, tp + 1, move_.weaken);
     }
 }
 
-fn execute(teams: &mut Vec<Vec<setup::Player>>, move_: &moves::Move, team: usize, player: usize) {
+fn get_target(teams: &Vec<Vec<Player>>, team: usize) -> (usize, usize) {
+    //infer target when possible
+    //TODO: do something about targeting players with < 1 hp
+    let tt: usize;
+    let tp: usize;
+    if teams.len() == 2 {
+        tt = 1 - team;
+    } else {
+        tt = get_usize_between(1, teams.len()) - 1;
+    }
+    if teams[tt].len() == 1 {
+        tp = 0;
+    } else {
+        tp = get_usize_between(1, teams[tt].len()) - 1;
+    }
+    (tt, tp)
+}
+
+fn execute(teams: &mut Vec<Vec<setup::Player>>, move_type: &moves::Move, team: usize, player: usize) {
+    let move_: &moves::Move;
+    let gen_move: moves::Move;
+    let tt: usize;
+    let tp: usize;
+    let effect: Option::<fn(move_: &Move, teams: &mut Vec<Vec<Player>>, team: usize, player: usize, tt: usize, tp: usize)>;
+    if move_type.special == SpecialMoves::Default { 
+        move_ = move_type;
+        effect = None;
+        if move_.damage > 0 || move_.poison > 0 || move_.burn > 0 || move_.stun > 0 || move_.weaken > 0 || move_.dispel > 0 {
+            (tt, tp) = get_target(teams, team);
+        } else {
+            tt = 0;
+            tp = 0;
+        }
+    } else if move_type.special.requires_effect_target() {
+        (tt, tp) = get_target(teams, team);
+        (gen_move, effect) = move_type.special.get(&teams[team][player], &teams[tt][tp]);
+        move_ = &gen_move;
+    } else {
+        tt = 0;
+        tp = 0;
+        (gen_move, effect) = move_type.special.get(&teams[team][player], &teams[0][0]);
+        move_ = &gen_move;
+    }
+
+    
     //execution order: tankify, heal, cleanse, user str/weaken, dispel, target shield/guard/dodge, damage, debuff, buff
     //tankify
     if move_.tankify > 0 {
         teams[team][player].max_hp += move_.tankify;
-        println!("T{}P{} tankified for {}", team, player, move_.tankify);
+        println!("T{}P{} tankified for {}", team + 1, player + 1, move_.tankify);
     }
     //heal
     if move_.heal > 0 {
-        teams[team][player].hp += move_.heal;
-        if teams[team][player].hp > teams[team][player].max_hp {
-            teams[team][player].hp = teams[team][player].max_hp;
+        teams[team][player].hp += move_.heal as i32;
+        if teams[team][player].hp > teams[team][player].max_hp as i32 {
+            teams[team][player].hp = teams[team][player].max_hp as i32;
         }
-        println!("T{}P{} healed for {}", team, player, move_.heal);
+        println!("T{}P{} healed for {}", team + 1, player + 1, move_.heal);
     }
     //cleanse
     if move_.cleanse > 0 {
@@ -133,26 +193,10 @@ fn execute(teams: &mut Vec<Vec<setup::Player>>, move_: &moves::Move, team: usize
         teams[team][player].burn -= 1;
         teams[team][player].stun -= 1;
         teams[team][player].weaken -= 1;
-        println!("T{}P{} cleansed for {}", team, player, move_.cleanse);
+        println!("T{}P{} cleansed for {}", team + 1, player + 1, move_.cleanse);
     }
-
     //attack sequence
-    if move_.damage > 0 || move_.poison > 0 || move_.burn > 0 || move_.stun > 0 || move_.weaken > 0 || move_.dispel > 0 {
-        //infer target when possible
-        let tt: usize;
-        if teams.len() == 2 {
-            tt = 1 - team;
-        } else {
-            tt = get_usize_between(1, teams.len()) - 1;
-        }
-        let tp: usize;
-        if teams[tt].len() == 1 {
-            tp = 0;
-        } else {
-            tp = get_usize_between(1, teams[tt].len()) - 1;
-        }
-        attack(move_, teams, team, player, tt, tp)
-    }
+    attack(&move_, teams, team, player, tt, tp);
     //buffs
     let user = &mut teams[team][player];
     //regen
@@ -162,12 +206,12 @@ fn execute(teams: &mut Vec<Vec<setup::Player>>, move_: &moves::Move, team: usize
         } else {
             move_.regen
         };
-        println!("T{}P{} begun regenerating for {}", team, player, move_.regen);
+        println!("T{}P{} begun regenerating for {}", team + 1, player + 1, move_.regen);
     }
     //strength
     if move_.strength > 0 {
         user.strength += move_.strength;
-        println!("T{}P{} gained {} strength", team, player, move_.strength);
+        println!("T{}P{} gained {} strength", team + 1, player + 1, move_.strength);
     }
     //shield
     if move_.shield > 0 {
@@ -176,51 +220,94 @@ fn execute(teams: &mut Vec<Vec<setup::Player>>, move_: &moves::Move, team: usize
         } else {
             move_.shield
         };
-        println!("T{}P{} acquired a shield of {}", team, player, move_.shield);
+        println!("T{}P{} acquired a shield of {}", team + 1, player + 1, move_.shield);
     }
     //guard
     if move_.guard > 0 {
         user.guard += move_.guard;
-        println!("T{}P{} gained {} guard", team, player, move_.guard);
+        println!("T{}P{} gained {} guard", team + 1, player + 1, move_.guard);
     }
     //dodge
     if move_.dodge > 0 {
         user.dodge += move_.dodge;
-        println!("T{}P{} gained {} dodge", team, player, move_.dodge);
+        println!("T{}P{} gained {} dodge", team + 1, player + 1, move_.dodge);
+    }
+    if effect.is_some() {
+        effect.unwrap()(move_, teams, team, player, tt, tp);
     }
 }
 
 fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<u32>) -> (bool, usize) {
-    let mut turn = true;
-    let mut streak = 0;
-
+    //print game state
+    println!("{}", game.teams
+        .iter()
+        .map(|t| t
+            .iter()
+            .map(|p| p.hp.to_string())
+            .collect::<Vec<String>>()
+        .join(", "))
+        .collect::<Vec<String>>()
+        .join(" - ")
+    );
     println!("Player {} of Team {}'s Turn!", team + 1, player + 1);
-    let mut rng = rand::thread_rng();
-    while turn {
-        let input = get_user_input::<String>().to_ascii_lowercase();
-        if input == "s" {
-            let random = dist.sample(&mut rng);
-            if random > 50 + game.luck {
-                streak += 1;
-                println!("Streak Successful");
+    //regen
+    if game.teams[team][player].regen > 0 {
+        println!("T{}P{} regenerated 1 hp", team + 1, player + 1);
+        game.teams[team][player].regen -= 1;
+    }
+    //stun
+    if game.teams[team][player].stun > 0 {
+        println!("T{}P{} is stunned!", team + 1, player + 1);
+    } else {
+        let mut turn = true;
+        let mut streak = 0;
+        let mut rng = rand::thread_rng();
+        while turn {
+            let input = get_user_input::<String>().to_ascii_lowercase();
+            if input == "s" {
+                let random = dist.sample(&mut rng);
+                if random > 50 + game.luck as u32 {
+                    streak += 1;
+                    println!("Streak Successful");
+                } else {
+                    turn = false;
+                    println!("Streak Failed");
+                }
+            } else if let Some(move_) = moves::MOVES.get(&input.as_str()) {
+                if streak >= move_.cost {
+                    execute(&mut game.teams, &move_, team, player);
+                    turn = false;
+                } else {
+                    println!(
+                        "You need {} more streak points to use {}!",
+                        move_.cost - streak,
+                        input
+                    )
+                }
             } else {
-                turn = false;
-                println!("Streak Failed");
+                println!("Invalid Input");
             }
-        } else if let Some(move_) = moves::MOVES.get(&input.as_str()) {
-            if streak >= move_.cost {
-                execute(&mut game.teams, &move_, team, player);
-                turn = false;
-            } else {
-                println!(
-                    "You need {} more streak points to use {}!",
-                    move_.cost - streak,
-                    input
-                )
-            }
-        } else {
-            println!("Invalid input!");
         }
+    }
+    //poison
+    if game.teams[team][player].poison > 0 {
+        game.teams[team][player].poison -= 1;
+        game.teams[team][player].hp -= 1;
+        println!("T{}P{} took 1 damage from poison ({} remaining)", team + 1, player + 1, game.teams[team][player].poison);
+    }
+    //burn
+    if game.teams[team][player].burn > 0 {
+        game.teams[team][player].burn -= 1;
+        game.teams[team][player].hp -= 2;
+        println!("T{}P{} took 2 damage from burning ({} remaining)", team + 1, player + 1, game.teams[team][player].burn);
+    }
+    //check for status effect defeat
+    if game.teams[team][player].hp <= 0 {
+        println!("T{}P{} was felled!", team + 1, player + 1);
+        game.teams[team][player].poison = 0;
+        game.teams[team][player].burn = 0;
+        game.teams[team][player].stun = 0;
+        game.teams[team][player].weaken = 0;
     }
     game_over(&game.teams)
 }
@@ -234,20 +321,20 @@ fn game_over(teams: &Vec<Vec<setup::Player>>) -> (bool, usize) {
                 .any(|player| player.hp > 0)
             )
             .count() == 1,
-        teams
+        0 /*teams
             .iter()
             .position(|team| team
                 .iter()
                 .any(|player| player.hp > 0)
             )
-            .unwrap(),
+            .unwrap(),*/
     )
 }
 
-fn get_usize_between(min: usize, max: usize) -> usize {
+pub fn get_usize_between(min: usize, max: usize) -> usize {
     let mut input: usize = get_user_input();
     while input < min || input > max {
-        println!("Invalid input!");
+        println!("Invalid Input");
         input = get_user_input();
     }
     input
@@ -259,17 +346,14 @@ fn main() {
 
     let distribution = Uniform::new(1, 100);
 
-    let mut game_active = true;
+    let mut game_over = false;
     let mut winner = 0;
-    while game_active {
+    while !game_over {
         for team in 0..game.teams.len() {
             for player in 0..game.teams[team].len() {
-                (game_active, winner) = take_turn(&mut game, team, player, &distribution);
+                (game_over, winner) = take_turn(&mut game, team, player, &distribution);
             }
         }
     }
     println!("{} won the game!", winner);
-
-    
-    
 }

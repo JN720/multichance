@@ -1,9 +1,15 @@
 use phf::phf_map;
 
-#[derive(Clone)]
+use crate::setup::Player;
+
+#[derive(Clone, PartialEq)]
 pub enum SpecialMoves {
     Default,
     Arrow,
+    Accelerate,
+    Backstab,
+    Bank,
+    Metallize,
 }
 
 impl Default for SpecialMoves {
@@ -17,8 +23,95 @@ impl std::fmt::Debug for SpecialMoves {
         match self {
             Self::Default => write!(f, "Default"),
             Self::Arrow => write!(f, "Arrow"),
+            Self::Accelerate => write!(f, "Accelerate"),
+            Self::Backstab => write!(f, "Backstab"),
+            Self::Bank => write!(f, "Bank"),
+            Self::Metallize => write!(f, "Metallize"),
         }
     }
+}
+
+impl SpecialMoves {
+    pub fn requires_effect_target(&self) -> bool {
+        match self {
+            Self::Metallize => true,
+            _ => false,
+        }
+    }
+
+    pub fn get(&self, user: &Player, target: &Player) -> (
+        Move, 
+        Option<fn(move_: &Move, teams: &mut Vec<Vec<Player>>, team: usize, player: usize, tt: usize, tp: usize)>
+    ) {
+        match self {
+            Self::Arrow => {
+                fn effect (
+                    move_: &Move,
+                    _: &mut Vec<Vec<Player>>, 
+                    _: usize, 
+                    _: usize, 
+                    _: usize,
+                    _: usize
+                ) {
+                    println!("{}", match move_.damage {
+                        5 => "Arrow Crit",
+                        3 => "Arrow Hit",
+                        1 => "Arrow Grazed",
+                        _ => "Arrow Missed"
+                    })
+                }
+                let mut power: u32 = rand::random::<u32>() % 4;
+                if power == 2 {
+                    power = 5
+                }
+                (off(2, power, 1, 0, 0, (power > 2) as u32, 0, 0), Some(effect))
+            },
+            Self::Accelerate => {
+                fn effect (
+                    move_: &Move,
+                    teams: &mut Vec<Vec<Player>>, 
+                    team: usize, 
+                    player: usize, 
+                    _: usize,
+                    _: usize
+                ) {
+                    teams[team][player].special.accelerate += 1;
+                    println!("T{}P{} accelerated to {}", team, player, move_.damage - 2);
+                }
+                (
+                    dmg(3, 3 + user.special.accelerate, 1),
+                    Some(effect)
+                )
+            },
+            Self::Backstab => {
+                fn effect (
+                    _: &Move,
+                    teams: &mut Vec<Vec<Player>>, 
+                    _: usize, 
+                    _: usize, 
+                    tt: usize,
+                    tp: usize
+                ) {
+                    teams[tt][tp].poison = 0;
+                }
+                let success: bool = rand::random();
+                println!("{}", if success { "Backstab Successful" } else { "Backstab failed, resorting to standard attack" });
+                (
+                    if rand::random() {
+                        dmg(2, 1, 1)
+                    } else {
+                        off(2, 3, 1, 0, 0, 1, 0, 0)
+                    },
+                    Some(effect) 
+                )
+            },
+            Self::Metallize => {
+                println!("{} poison metallized", target.poison);
+                (dmg(3, target.poison * 2, 1), None)
+            },
+            _ => (default(), None),
+        }
+    }    
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +196,7 @@ pub const fn def(cost: u32, heal: u32, shield: u32, tankify: u32, regen: u32, st
     }
 }
 
-pub const fn hybrid(
+pub const fn hyb (
     cost: u32,
     damage: u32,
     repeat: u32, 
@@ -155,17 +248,34 @@ pub static MOVES: phf::Map<&'static str, Move> = phf_map! {
     "sword" => dmg(1, 1, 1),
     "multisword" => dmg(2, 1, 3),
     "cannon" => dmg(3, 5, 1),
+    "hax" => dmg(3, 3, 2),
     "superstrike" => dmg(4, 8, 1),
     "parry this" => dmg(5, 15, 1),
-    //off: (cost, damage, repeat, poison, burn, stun, dispel, weaken)
+    //offensive: (cost, damage, repeat, poison, burn, stun, weaken, dispel)
+    "zap" => off(2, 2, 1, 0, 0, 1, 0, 0),
     "intoxicate" => off(2, 1, 1, 3, 0, 0, 0, 0),
-    "fireball" => off(3, 1, 1, 0, 2, 0, 0, 0),
+    "dispel" => off(2, 0, 0, 0, 0, 0, 0, 1),
+    "fireball" => off(3, 3, 1, 0, 2, 0, 0, 0),
+    "micronuke" => off(3, 3, 1, 2, 1, 0, 0, 0),
     "stun" => off(3, 0, 0, 0, 0, 3, 0, 0),
-    //def: (cost, heal, shield, tankify, regen, strength, guard, dodge, cleanse)
+    "milinuke" => off(4, 5, 1, 3, 2, 0, 0, 0),
+    "asphyxiate" => off(4, 1, 1, 15, 0, 0, 0, 0),
+    "reaper" => off(5, 12, 1, 0, 0, 0, 0, 8),
+    //defensive: (cost, heal, shield, tankify, regen, strength, guard, dodge, cleanse)
+    "cleanse" => def(1, 0, 0, 0, 0, 0, 0, 0, 1),
+    "heal" => def(2, 2, 0, 0, 0, 0, 0, 0, 1),
+    "regenerate" => def(2, 1, 0, 0, 3, 0, 0, 0, 1),
     "shield" => def(2, 0, 4, 0, 0, 0, 0, 0, 0),
-    
-    //hybrid: (cost, damage, repeat, heal, tankify, poison, burn, stun, weaken, regen, strength, guard, dodge, cleanse)
+    "strength" => def(2, 0, 0, 0, 0, 1, 0, 0, 0),
+    "guard" => def(2, 0, 0, 0, 0, 0, 1, 0, 0),
+    "dodge" => def(3, 0, 0, 0, 0, 0, 0, 2, 0),
+    //hybrid: (cost, damage, repeat, heal, shield, tankify, poison, burn, stun, weaken, regen, strength, guard, dodge, cleanse, dispel)
+    "vampirize" => hyb(3, 3, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
 
     //special: (cost, special)
     "arrow" => special(2, SpecialMoves::Arrow),
+    "backstab" => special(2, SpecialMoves::Backstab),
+    "accelerate" => special(3, SpecialMoves::Accelerate),
+    "metallize" => special(3, SpecialMoves::Metallize),
+    "bank" => special(4, SpecialMoves::Bank),
 };
