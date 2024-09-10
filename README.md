@@ -34,6 +34,13 @@ Cleanse removes 1 turn of each negative effect on yourself
 Dispel removes 1 turn of a positive effect on a target.
 Against a shield, dispel deals twice the dispel amount as damage to the shield.
 
+Some moves are also special and have unique effects:
+
+- Arrow: executes one of the 4 scenarios randomly: 0 damage, 1 damage, 3 damage, 5 damage & 1 stun
+- Accelerate: starts by dealing 3 damage and does 1 more damage each time it is used
+- Backstab: randomly either deals 1 damage or 3 damage & 1 stun
+- Metallize: converts the number of turns the target has poison into a single attack dealing double the poison amount
+
 # Game Settings
 
 The game has the following settings.
@@ -61,7 +68,8 @@ followed by
 cargo run
 ```
 
-#Future
+# Future
+
 While I do not plan to return to this specific version, I may make a graphical version of the game
 in a game engine sometime in the future, preferably with online multiplayer.
 Some features I would like to add or that appeared in other versions of this game are:
