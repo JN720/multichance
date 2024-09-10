@@ -1,8 +1,9 @@
-#MultiChance
+# MultiChance
+
 This is a local multiplayer recreation of the game Chance.
 I built this project as a proxy for learning the basics of Rust.
 
-#Gameplay
+# Gameplay
 
 MultiChance is a luck-based CLI game where your goal is to defeat all opponents on all other teams.
 An opponent is defeated by getting their HP down to 0.
@@ -33,7 +34,8 @@ Cleanse removes 1 turn of each negative effect on yourself
 Dispel removes 1 turn of a positive effect on a target.
 Against a shield, dispel deals twice the dispel amount as damage to the shield.
 
-#Game Settings
+# Game Settings
+
 The game has the following settings.
 
 -Starting HP: the amount of HP each player starts with
@@ -43,7 +45,8 @@ The game has the following settings.
 -Player Counts: this is the number of players on a team, specified for each one
 -CPU: if a particular player will be played by the CPU
 
-#Running
+# Running
+
 This is a standard Rust project built with Cargo.
 Ensure that Rust is installed.
 To run it, navigate to the directory of the repository (with Cargo.toml) and execute
