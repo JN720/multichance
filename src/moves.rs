@@ -38,12 +38,15 @@ impl SpecialMoves {
             _ => false,
         }
     }
-
+    //generate special moves and their side effects
     pub fn get(&self, user: &Player, target: &Player) -> (
         Move, 
         Option<fn(move_: &Move, teams: &mut Vec<Vec<Player>>, team: usize, player: usize, tt: usize, tp: usize)>
     ) {
         match self {
+            /*
+                Arrow does 0, 1, 3, or 5 damage and 1 stun if the damage if 5
+             */
             Self::Arrow => {
                 fn effect (
                     move_: &Move,
@@ -66,6 +69,9 @@ impl SpecialMoves {
                 }
                 (off(2, power, 1, 0, 0, (power > 3) as u32, 0, 0), Some(effect))
             },
+            /*
+                Starts at 3 damage, increases by 1 each time it's used
+            */
             Self::Accelerate => {
                 fn effect (
                     move_: &Move,
@@ -83,6 +89,9 @@ impl SpecialMoves {
                     Some(effect)
                 )
             },
+            /* 
+                Either does 3 damage and 1 stun or 1 damage
+            */
             Self::Backstab => {
                 fn effect (
                     _: &Move,
@@ -105,6 +114,10 @@ impl SpecialMoves {
                     Some(effect) 
                 )
             },
+            /* 
+                Does a single attack that does twice the amount of poison on the target
+                Afterwards, all of the target's poison is removed
+            */
             Self::Metallize => {
                 println!("{} poison metallized", target.poison);
                 (dmg(3, target.poison * 2, 1), None)
@@ -133,6 +146,12 @@ pub struct Move {
     pub cleanse: u32,
     pub dispel: u32,
     pub special: SpecialMoves
+}
+
+impl Move {
+    pub fn desc(&self) {
+        
+    }
 }
 
 pub const fn default() -> Move {

@@ -1,5 +1,5 @@
 use crate::setup::get_user_input;
-use moves::{Move, SpecialMoves};
+use moves::{Move, SpecialMoves, MOVES};
 use rand::distributions::{Distribution, Uniform};
 use setup::Player; 
 
@@ -15,10 +15,28 @@ fn attack(
     tp: usize
 ) {
     if move_.dispel > 0 {
-        teams[tt][tp].regen -= move_.dispel;
-        teams[tt][tp].strength -= move_.dispel;
-        teams[tt][tp].guard -= move_.dispel;
-        teams[tt][tp].dodge -= move_.dispel;
+        //dispel target's buffs
+        if teams[tt][tp].regen > move_.dispel {
+            teams[tt][tp].regen -= move_.dispel;
+        } else {
+            teams[tt][tp].regen = 0;
+        }
+        if teams[tt][tp].strength > move_.dispel {
+            teams[tt][tp].strength -= move_.dispel;
+        } else {
+            teams[tt][tp].strength = 0;
+        }
+        if teams[tt][tp].guard > move_.dispel {
+            teams[tt][tp].guard -= move_.dispel;
+        } else {
+            teams[tt][tp].guard = 0;
+        }
+        if teams[tt][tp].dodge > 0 {
+            teams[tt][tp].dodge -= move_.dispel;
+        } else {
+            teams[tt][tp].dodge = 0;
+        }
+        //shield takes twice the dispel amount as damage
         if teams[tt][tp].shield > 0 {
             if teams[tt][tp].shield <= move_.dispel * 2 {
                 teams[tt][tp].shield = 0;
@@ -128,18 +146,33 @@ fn attack(
     }
 }
 
-fn get_target(teams: &Vec<Vec<Player>>, team: usize) -> (usize, usize) {
-    //infer target when possible
-    //TODO: do something about targeting players with < 1 hp
+fn get_target(teams: &Vec<Vec<Player>>, team: usize, is_cpu: bool) -> (usize, usize) {
+    //figure out target for cpu
+    //TODO: make better
+    if is_cpu {
+        let valid_teams = (0..teams.len())
+            .filter(|t| 
+                *t != team && teams[*t]
+                    .iter()
+                    .any(|p| p.hp > 0))
+            .collect::<Vec<usize>>();
+        let tt = valid_teams[rand::random::<usize>() % valid_teams.len()];
+        let valid_players = (0..teams[tt].len())
+            .filter(|p| teams[tt][*p].hp > 0)
+            .collect::<Vec<usize>>();
+        let tp = valid_players[rand::random::<usize>() % valid_players.len()];
+        return (tt, tp);
+    }
     let mut tt = 0;
     let mut tp = 0;
     let mut invalid = true;
     while invalid {
+        //infer target when possible
         if teams.len() == 2 {
             tt = 1 - team;
         } else {
             println!("Select team to target:");
-            tt = get_usize_between(1, teams.len()) - 1;
+            tt = get_num_between(1, teams.len()) - 1;
             if tt == team || teams[tt].iter().all(|p| p.hp <= 0) {
                 println!("Invalid Team");
                 continue;
@@ -149,12 +182,12 @@ fn get_target(teams: &Vec<Vec<Player>>, team: usize) -> (usize, usize) {
             tp = 0;
         } else {
             println!("Select player to target:");
-            tp = get_usize_between(1, teams[tt].len()) - 1;
-            if teams[tt][tp].hp <= 0 {
-                println!("Invalid Player");
-            } else {
-                invalid = false;
-            }
+            tp = get_num_between(1, teams[tt].len()) - 1;
+        }
+        if teams[tt][tp].hp <= 0 {
+            println!("Invalid Player");
+        } else {
+            invalid = false;
         }
     }
     (tt, tp)
@@ -162,25 +195,31 @@ fn get_target(teams: &Vec<Vec<Player>>, team: usize) -> (usize, usize) {
 
 fn execute(teams: &mut Vec<Vec<setup::Player>>, move_type: &moves::Move, team: usize, player: usize) {
     let move_: &moves::Move;
+    let is_cpu = teams[team][player].is_cpu;
+    //generated special move
     let gen_move: moves::Move;
+    //target team and player
     let mut tt;
     let mut tp;
+    //side effect of special moves
     let effect: Option::<fn(move_: &Move, teams: &mut Vec<Vec<Player>>, team: usize, player: usize, tt: usize, tp: usize)>;
+    //since special moves are created on the spot and may depend on the target,
+    //we may need to figure out the target before executing the move
     let requires_target = move_type.special.requires_effect_target();
     if move_type.special == SpecialMoves::Default { 
         move_ = move_type;
         effect = None;
     } else if requires_target {
-        (tt, tp) = get_target(teams, team);
+        (tt, tp) = get_target(teams, team, is_cpu);
         (gen_move, effect) = move_type.special.get(&teams[team][player], &teams[tt][tp]);
         move_ = &gen_move;
     } else {
         (gen_move, effect) = move_type.special.get(&teams[team][player], &teams[0][0]);
         move_ = &gen_move;
     }
-
-    if !requires_target && (move_.damage > 0 || move_.poison > 0 || move_.burn > 0 || move_.stun > 0 || move_.weaken > 0 || move_.dispel > 0) {
-        (tt, tp) = get_target(teams, team);
+    //regular targetting for non-special moves
+    if !requires_target && (move_.repeat > 0 || move_.poison > 0 || move_.burn > 0 || move_.stun > 0 || move_.weaken > 0 || move_.dispel > 0) {
+        (tt, tp) = get_target(teams, team, is_cpu);
     } else {
         tt = 0;
         tp = 0;
@@ -256,12 +295,32 @@ fn execute(teams: &mut Vec<Vec<setup::Player>>, move_type: &moves::Move, team: u
         user.dodge += move_.dodge;
         println!("T{}P{} gained {} dodge", team + 1, player + 1, move_.dodge);
     }
+    //execute special move side effect if applicable
     if effect.is_some() {
         effect.unwrap()(move_, teams, team, player, tt, tp);
     }
 }
 
+fn get_cpu_input(streak: u32, random: u32) -> String {
+    if streak == 0 {
+        return "s".to_string()
+    }
+    if random > 33 && streak != 5 {
+        "s".to_string()
+    } else {
+        let valid_moves = MOVES
+            .entries()
+            .filter(|e| e.1.cost == streak)
+            .map(|e| *e.0)
+            .collect::<Vec<&str>>();
+        let chosen = valid_moves[rand::random::<usize>() % valid_moves.len()].to_string();
+        println!("{}", chosen);
+        chosen
+    }
+}
+
 fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<u32>) -> (bool, usize) {
+    let is_cpu = game.teams[team][player].is_cpu;
     //print game state
     println!("{}", game.teams
         .iter()
@@ -287,7 +346,8 @@ fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<
         let mut streak = 0;
         let mut rng = rand::thread_rng();
         while turn {
-            let input = get_user_input::<String>().to_ascii_lowercase();
+            let input = if is_cpu { get_cpu_input(streak, dist.sample(&mut rng)) } else { get_user_input::<String>().to_ascii_lowercase() };
+            //streak
             if input == "s" {
                 let random = dist.sample(&mut rng);
                 if random < 50 + game.luck as u32 {
@@ -297,6 +357,7 @@ fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<
                     turn = false;
                     println!("Streak Failed");
                 }
+            //move
             } else if let Some(move_) = moves::MOVES.get(&input.as_str()) {
                 if streak >= move_.cost {
                     execute(&mut game.teams, &move_, team, player);
@@ -308,6 +369,7 @@ fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<
                         input
                     )
                 }
+            //TODO: help and move list
             } else {
                 println!("Invalid Input");
             }
@@ -325,7 +387,7 @@ fn take_turn(game: &mut setup::Game, team: usize, player: usize, dist: &Uniform<
         game.teams[team][player].hp -= 2;
         println!("T{}P{} took 2 damage from burning ({} remaining)", team + 1, player + 1, game.teams[team][player].burn);
     }
-    //check for status effect defeat
+    //check for defeat by status effect
     if game.teams[team][player].hp <= 0 {
         println!("T{}P{} was felled!", team + 1, player + 1);
         game.teams[team][player].poison = 0;
@@ -355,17 +417,27 @@ fn game_over(teams: &Vec<Vec<setup::Player>>) -> (bool, usize) {
     )
 }
 
-pub fn get_usize_between(min: usize, max: usize) -> usize {
-    let mut input: usize = get_user_input();
+pub fn get_num_between<T>(min: T, max: T) -> T 
+where
+    T: std::str::FromStr,
+    T: std::fmt::Display,
+    T::Err: std::fmt::Debug,
+    T: PartialOrd
+{
+    let mut input: T = get_user_input();
     while input < min || input > max {
         println!("Invalid Input");
+        println!(
+            "The number must be between {} and {}",
+            min, max
+        );
         input = get_user_input();
     }
     input
 }
 
 fn main() {
-    println!("Welcome to the game!");
+    println!("Welcome to MultiChance!");
     let mut game = setup::setup_game();
 
     let distribution = Uniform::new(1, 100);
@@ -378,6 +450,7 @@ fn main() {
                 if game.teams[team][player].hp > 0 {
                     (game_over, winner) = take_turn(&mut game, team, player, &distribution);
                 }
+                //TODO: is there really no better way to do this?
                 if game_over {
                     break;
                 }

@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::get_usize_between;
+use crate::get_num_between;
 
 #[derive(Debug, Default)]
 pub struct Player {
@@ -81,22 +81,22 @@ impl Game {
 
 pub fn setup_game() -> Game {
     // Get user input
-    println!("Enter starting HP:");
-    let starting_hp = get_usize_between(1, 100) as i32;
+    println!("Enter starting HP (ex 20):");
+    let starting_hp = get_num_between(1, 100);
 
-    println!("Enter luck:");
+    println!("Enter luck (ex 10):");
     let luck: i32 = get_user_input();
 
-    println!("Enter game mode:");
+    println!("Enter game mode (classic):");
     let game_mode: String = get_user_input();
 
-    println!("Enter number of teams:");
-    let num_teams: usize = get_usize_between(2, 4);
+    println!("Enter number of teams (ex 2):");
+    let num_teams: usize = get_num_between(2, 4);
 
     let mut team_player_count = Vec::new();
     for team in 1..=num_teams as usize {
-        println!("Enter player count for Team {}:", team);
-        team_player_count.push(get_usize_between(1, 4));
+        println!("Enter player count for Team {} (ex 2):", team);
+        team_player_count.push(get_num_between(1, 4));
     }
 
     let mut teams = Vec::new();
@@ -105,7 +105,7 @@ pub fn setup_game() -> Game {
         for player in 1..=team_player_count[(team - 1) as usize] {
             println!("Is Player {} in Team {} a CPU? (true/false):", player, team);
             let is_cpu: bool = get_user_input();
-            players.push(Player { hp: starting_hp, is_cpu, ..Player::default() });
+            players.push(Player { hp: starting_hp, max_hp: starting_hp as u32, is_cpu, ..Player::default() });
         }
         teams.push(players);
     }
